@@ -44,7 +44,12 @@ int main(int argc, char** argv)
     }
 
     printf("Authentication successful!\n");
-    
+    despotify_exit(ds);
+    if (!despotify_cleanup())
+    {
+        printf("despotify_cleanup() failed\n");
+        return 1;
+    }
     free_auth(auth);
     return 0;
 }
