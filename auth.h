@@ -8,6 +8,6 @@ typedef struct
 
 auth_t* auth_file(const char* filename);
 
-void free_auth_t(auth_t* auth);
+void free_auth(auth_t* auth);
 
 #endif //__AUTH_H__
