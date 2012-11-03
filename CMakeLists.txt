@@ -9,5 +9,6 @@ PROJECT(sdj C)
 INCLUDE_DIRECTORIES(src)
 
 ADD_DEFINITIONS(-Wall)
-ADD_SUBDIRECTORY(src)
-ADD_SUBDIRECTORY(test)
+
+ADD_EXECUTABLE(test_auth test_auth.c auth.c)
+TARGET_LINK_LIBRARIES(test_auth despotify)
