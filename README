@@ -1,1 +1,6 @@
-Playing with despotify, hopefully going to get a spotify-based DJ client up and running!
+Playing with despotify, currently can download tracks.
+
+To Use:
+Install despotify (http://despotify.se/)
+Place your username and password in the provided credentials.txt template file. If you're using Facebook to log in, you'll need to set up a device-specific password (http://www.spotify.com/us/help/faq/devices/connect-devices/)
+Enjoy!
