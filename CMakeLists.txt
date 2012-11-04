@@ -16,6 +16,5 @@ TARGET_LINK_LIBRARIES(test_auth despotify)
 ADD_EXECUTABLE(test_dump test_dump.c auth.c)
 TARGET_LINK_LIBRARIES(test_dump despotify)
 
-ADD_EXECUTABLE(test_play test_play.c auth.c coreaudio.c)
-SET(CMAKE_EXE_LINKER_FLAGS -framework\ CoreAudio)
-TARGET_LINK_LIBRARIES(test_play despotify)
+ADD_EXECUTABLE(test_play test_play.c auth.c libao.c)
+TARGET_LINK_LIBRARIES(test_play despotify ao)
