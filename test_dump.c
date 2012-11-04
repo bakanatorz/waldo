@@ -7,6 +7,13 @@
 #include "audio.h"
 
 static bool play = false;
+
+typedef struct chunk_t
+{
+    struct pcm_data pcm;
+    struct chunk_t* next;
+} chunk_t;
+
 void print_track_info(const struct track* t)
 {
     if(t->has_meta_data)
@@ -95,7 +102,6 @@ int main(int argc, char** argv)
     char* uri = argv[3]+14;
     char id[33];
     despotify_uri2id(uri,id);
-    FILE* fp = fopen(argv[2],"wb");
     struct track* t = despotify_get_track(ds, id);
     printf("Playing track %s\n",uri);
     if (!t)
@@ -108,14 +114,16 @@ int main(int argc, char** argv)
     print_track_info(t);
 
     despotify_play(ds, t, false);
-    struct pcm_data pcm;
+    chunk_t* chunk = calloc(1, sizeof(chunk_t));
+    chunk_t* headchunk = chunk;
     play = true;
     while (play)
     {
-        int rc = despotify_get_pcm(ds, &pcm);
+        int rc = despotify_get_pcm(ds, &chunk->pcm);
         if (rc == 0)
         {
-            fwrite(pcm.buf, sizeof(char), pcm.len, fp);
+            chunk->next = calloc(1, sizeof(chunk_t));
+            chunk = chunk->next;
         }
         else
         {
@@ -124,6 +132,46 @@ int main(int argc, char** argv)
         }
     }
 
+    int len = 0;
+    chunk = headchunk;
+    while(chunk)
+    {
+        len += chunk->pcm.len;
+        chunk = chunk->next;
+    }
+
+    FILE* fp = fopen(argv[2],"wb");
+    const int16_t NumChannels = 2;
+    const int16_t BitsPerSample = 16;
+    const int32_t Subchunk2Size = len * NumChannels * BitsPerSample/8;
+    const int32_t SampleRate = 44100;
+
+    const int32_t ChunkSize = 36 + Subchunk2Size;
+    const int32_t SubChunk1Size = 16;
+    const int16_t AudioFormat = 1;
+    const int32_t ByteRate = SampleRate * NumChannels * BitsPerSample/8;
+    const int16_t BlockAlign = NumChannels * BitsPerSample/8;
+
+
+    fwrite("RIFF", 1, 4, fp);
+    fwrite(&ChunkSize, 4, 1, fp);
+    fwrite("WAVE", 1, 4, fp);
+    fwrite("fmt ", 1, 4, fp);
+    fwrite(&SubChunk1Size, 1, 4, fp);
+    fwrite(&AudioFormat, 2, 1, fp);
+    fwrite(&NumChannels, 2, 1, fp);
+    fwrite(&SampleRate, 4, 1, fp);
+    fwrite(&ByteRate, 4, 1, fp);
+    fwrite(&BlockAlign, 2, 1, fp);
+    fwrite(&BitsPerSample, 2, 1, fp);
+    fwrite("data", 1, 4, fp);
+    fwrite(&Subchunk2Size, 4, 1, fp);
+    chunk = headchunk;
+    while(chunk)
+    {
+        fwrite(chunk->pcm.buf, 1, chunk->pcm.len, fp);
+        chunk = chunk->next;
+    }
 
     fclose(fp);
     despotify_exit(ds);
