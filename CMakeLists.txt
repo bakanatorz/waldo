@@ -16,5 +16,8 @@ TARGET_LINK_LIBRARIES(test_auth despotify)
 ADD_EXECUTABLE(test_dump test_dump.c auth.c)
 TARGET_LINK_LIBRARIES(test_dump despotify)
 
+ADD_EXECUTABLE(test_stream test_stream.c auth.c sndqueue.c)
+TARGET_LINK_LIBRARIES(test_stream despotify vorbisfile)
+
 ADD_EXECUTABLE(test_play test_play.c auth.c libao.c)
 TARGET_LINK_LIBRARIES(test_play despotify ao)
