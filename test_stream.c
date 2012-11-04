@@ -9,6 +9,8 @@
 
 static bool play = false;
 
+void initfp(FILE* _fp);
+
 void print_track_info(const struct track* t)
 {
     if(t->has_meta_data)
