@@ -2,9 +2,9 @@
 #include <stdio.h>
 #include <despotify.h>
 #include <unistd.h>
+#include <sys/time.h>
 
 #include "auth.h"
-#include "audio.h"
 
 static bool play = false;
 
@@ -34,25 +34,49 @@ void print_track_info(const struct track* t)
 void callback(struct despotify_session* ds, int signal, void* data, void* callback_data)
 {
     static int seconds = -1;
-    (void)ds; (void)callback_data; /* don't warn about unused parameters */
+    static double starts = 0;
+    (void)callback_data; /* don't warn about unused parameters */
     
     switch (signal) {
         case DESPOTIFY_NEW_TRACK: {
             struct track* t = data;
             printf("New track: %s / %s (%d:%02d) %d kbit/s\n", t->title, t->artist->name, t->length / 60000, t->length % 60000 / 1000, t->file_bitrate / 1000);
+            seconds = -1;
             break;
         }
     
         case DESPOTIFY_TIME_TELL:
             if ((int)(*((double*)data)) != seconds) {
+                struct track* t = despotify_get_current_track(ds);
+                int prevseconds = seconds;
                 seconds = *((double*)data);
-                printf("Time: %d:%02d\r", seconds / 60, seconds % 60);
+                int trackseconds = t->length/1000;
+                printf("Time: %d:%02d/%d:%02d (%f%%)", seconds / 60, seconds % 60, trackseconds / 60, trackseconds % 60, ((double)seconds)/trackseconds*100);
+                if (prevseconds == -1)
+                {
+                    struct timeval tv;
+                    gettimeofday(&tv, NULL);
+                    starts = tv.tv_sec+((double)tv.tv_usec)*1.0e-6;
+                }
+                else
+                {
+                    struct timeval curtv;
+                    gettimeofday(&curtv, NULL);
+                    double curs = curtv.tv_sec+((double)curtv.tv_usec)*1.0e-6;
+                    double diff = curs-starts;
+                    printf(" diff: %f", diff);
+                    double rate = seconds/diff;
+                    double eta = (trackseconds-seconds)/rate;
+                    int mins = ((int)eta)/60;
+                    printf(" ETA: %d:%05.2f", mins, eta-mins*60);
+                }
+                printf("\r");
                 fflush(stdout);
             }
             break;
  
         case DESPOTIFY_END_OF_PLAYLIST:
-            printf("Track over\n");
+            printf("\nDownload Complete\n");
             play = false;
             break;
 }
