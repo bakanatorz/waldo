@@ -57,6 +57,10 @@
 /* Default buffer treshold value is 80 % */
 #define BUFFER_THRESHOLD 80;
 
+#define DEBUG
+
+#define DEBUG_SNDQUEUE
+
 #define DSFYfree(p) do { free(p); (p) = NULL; } while (0)
 #ifdef DEBUG
 #define DSFYDEBUG(...) { FILE *fd = fopen("/tmp/despotify.log","at"); fprintf(fd, "%s:%d %s() ", __FILE__, __LINE__, __func__); fprintf(fd, __VA_ARGS__); fclose(fd); }
@@ -64,7 +68,7 @@
 #define DSFYDEBUG(...)
 #endif
 
-#define _DSFYDEBUG(...)
+#define _DSFYDEBUG(...) DSFYDEBUG(__VA_ARGS__)
 
 #ifdef DEBUG_SNDQUEUE
 #define DSFYDEBUG_SNDQUEUE(...) DSFYDEBUG(__VA_ARGS__)
@@ -80,6 +84,7 @@ enum
     SND_CMD_CHANNEL_END
 };
 
+void shortsleep(void);
 void snd_fill_fifo(struct despotify_session* ds);
 int vorbis_consume(void* source, int bytes, void* private, int offset);
 int snd_consume_data(struct despotify_session* ds, int req_bytes, void* private, int (*consumer)(void* source, int bytes, void* private, int offset));

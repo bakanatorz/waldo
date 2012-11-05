@@ -45,7 +45,7 @@ enum {
     DL_END_OF_LIST
 };
 
-static void shortsleep(void)
+void shortsleep(void)
 {
     /* sleep 100 ms */
     struct timespec delay = {0, 100000000};
@@ -340,9 +340,11 @@ int snd_consume_data(struct despotify_session* ds, int req_bytes, void* private,
 
     pthread_mutex_lock(&ds->fifo->lock);
 
+    snd_fill_fifo(ds);
 
     /* process data */
     while (loop) {
+        //printf("looping\n");
         /* Check queue status */
         if (ds->fifo->start == NULL) {
             _DSFYDEBUG ("Waiting for data (%d bytes)\n", ds->fifo->totbytes);

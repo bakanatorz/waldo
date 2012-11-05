@@ -132,7 +132,6 @@ int main(int argc, char** argv)
         snd_fill_fifo(ds);
         size_t outsize = snd_consume_data(ds,sizeof(buf),buf,vorbis_consume);
         if (outsize) {
-            //printf("buf: %s\n",buf);
             fwrite(buf, outsize, 1, fp);
         }
         else {

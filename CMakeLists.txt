@@ -10,14 +10,14 @@ INCLUDE_DIRECTORIES(src)
 
 ADD_DEFINITIONS(-g -Wall -std=c99)
 
+ADD_EXECUTABLE(waldo_play play.c libao.c)
+TARGET_LINK_LIBRARIES(waldo_play despotify ao)
+
 ADD_EXECUTABLE(waldo_wave wave.c)
 TARGET_LINK_LIBRARIES(waldo_wave despotify)
 
 ADD_EXECUTABLE(waldo_ogg ogg.c sndqueue.c)
 TARGET_LINK_LIBRARIES(waldo_ogg despotify vorbisfile)
 
-ADD_EXECUTABLE(waldo_play play.c libao.c)
-TARGET_LINK_LIBRARIES(waldo_play despotify ao)
-
-ADD_EXECUTABLE(waldo_server server.c mongoose.c)
-TARGET_LINK_LIBRARIES(waldo_server despotify)
+ADD_EXECUTABLE(waldo_server server.c mongoose.c sndqueue.c)
+TARGET_LINK_LIBRARIES(waldo_server despotify vorbisfile)
