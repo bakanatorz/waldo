@@ -18,3 +18,6 @@ TARGET_LINK_LIBRARIES(waldo_ogg despotify vorbisfile)
 
 ADD_EXECUTABLE(waldo_play play.c libao.c)
 TARGET_LINK_LIBRARIES(waldo_play despotify ao)
+
+ADD_EXECUTABLE(waldo_server server.c mongoose.c)
+TARGET_LINK_LIBRARIES(waldo_server despotify)
