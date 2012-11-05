@@ -51,14 +51,6 @@ static void shortsleep(void)
     struct timespec delay = {0, 100000000};
     nanosleep(&delay, NULL);
 }
-
-FILE* fp;
-
-void initfp(FILE* _fp)
-{
-    fp = _fp;
-}
-
 void snd_reset_codec(struct despotify_session* ds) {
 	DSFYDEBUG("Resetting audio codec\n");
 	if ( ds->vf ) {
@@ -137,7 +129,7 @@ void snd_destroy (struct despotify_session* ds)
 	}
 }
 
-static void snd_fill_fifo(struct despotify_session* ds)
+void snd_fill_fifo(struct despotify_session* ds)
 {
     if (ds->dlabort) {
         while (ds->dlstate == DL_FILLING_BUSY) {
@@ -479,7 +471,7 @@ int snd_consume_data(struct despotify_session* ds, int req_bytes, void* private,
 }
 
 
-static int vorbis_consume(void* source, int bytes, void* private, int offset)
+int vorbis_consume(void* source, int bytes, void* private, int offset)
 {
     memcpy(private+offset,source,bytes);
     return bytes;
@@ -498,28 +490,8 @@ size_t snd_ov_read_callback(void *ptr, size_t size, size_t nmemb, void* session)
 
     /* TODO: Add function ptr */
     size_t outsize = snd_consume_data(ds,size*nmemb,ptr,vorbis_consume);
-    fwrite(ptr, outsize, 1, fp);
     return outsize;
 }
-
-#ifdef MP3_SUPPORT
-static int mpeg_consume(void* source, int bytes, void* private, int offset)
-{
-    mpg123_feed(private,source,bytes);
-    return bytes;
-}
-
-
-int snd_mpeg_feed_more_data(struct despotify_session* ds) 
-{
-    /* TODO: Fix this sizeof hack */
-    struct pcm_data data;
-
-    int outsize = snd_consume_data(ds,sizeof(data.buf),ds->mf,mpeg_consume);
-    fwrite(ds->mf, outsize, 1, fp);
-    return outsize;
-}
-#endif
 
 int snd_do_vorbis(struct despotify_session* ds, struct pcm_data* pcm ) {
     if (!ds->vf) {
@@ -600,203 +572,3 @@ int snd_do_vorbis(struct despotify_session* ds, struct pcm_data* pcm ) {
     return 0;
 }
 
-int snd_do_mpeg(struct despotify_session* ds, struct pcm_data* pcm) {
-#ifdef MP3_SUPPORT
-	int err = MPG123_OK;
-	size_t bytes = 0;
-	long rate;
-	int channels, enc;
-
-	if ( !ds->mf ) {
-		err = mpg123_init();
-		
-		if ( err != MPG123_OK ) {
-			DSFYDEBUG("Unable to initialize mpg123\n");
-			return err*10;
-		}
-	
-		ds->mf = mpg123_new(NULL,&err);
-		
-		if ( ds->mf == NULL || err != MPG123_OK ) {
-			DSFYDEBUG("Unable to initialize mpg123 (alloc)\n");
-			return err*10;
-		}
-		
-		err = mpg123_format_none(ds->mf);
-		if ( err != MPG123_OK ) {
-			DSFYDEBUG("Unable to clear output formats (%d)\n",err);
-			mpg123_delete(ds->mf);
-			ds->mf = NULL;
-			return err*10;
-		}
-		
-		err = mpg123_format(ds->mf, 44100, MPG123_MONO | MPG123_STEREO, MPG123_ENC_SIGNED_16);
-		
-		if ( err != MPG123_OK ) {
-			DSFYDEBUG("Unable to set output format (%d)\n",err);
-			mpg123_delete(ds->mf);
-			ds->mf = NULL;
-			return err*10;
-		}
-		
-		err = mpg123_param(ds->mf, MPG123_RVA, MPG123_RVA_MIX, 0);
-		
-		if ( err != MPG123_OK ) {
-			DSFYDEBUG("Unable to set RVA (%d)\n",err);
-			mpg123_delete(ds->mf);
-			ds->mf = NULL;
-			return err*10;
-		}
-		
-#ifdef DEBUG
-		err = mpg123_param(ds->mf, MPG123_VERBOSE, 3, 0);
-		
-		if ( err != MPG123_OK ) {
-			DSFYDEBUG("Unable to set verbose (%d)\n",err);
-			mpg123_delete(ds->mf);
-			ds->mf = NULL;
-			return err*10;
-		}
-#endif
-		err = mpg123_param(ds->mf, MPG123_ADD_FLAGS, MPG123_SEEKBUFFER, 0);
-		
-		if ( err != MPG123_OK ) {
-			DSFYDEBUG("Unable to add seekbuffer (%d)\n",err);
-			mpg123_delete(ds->mf);
-			ds->mf = NULL;
-			return err*10;
-		}
-		
-		mpg123_open_feed(ds->mf);
-		/* Initial feed of data */
-		if ( snd_mpeg_feed_more_data(ds) == 0 ) {
-			DSFYDEBUG("Failed during initial feed of data\n");
-			return -1*10;
-		}
-	}
-	
-	while ( 1 ) {
-		do {
-			err = mpg123_read(ds->mf,pcm->buf,sizeof(pcm->buf),&bytes);
-			
-			if ( err == MPG123_NEED_MORE ) {
-				if ( snd_mpeg_feed_more_data(ds) == 0) {
-					DSFYDEBUG("Track is done\n");
-					err = MPG123_DONE;
-				}
-			}
-		}
-		while ( bytes == 0 && err == MPG123_NEED_MORE);
-		
-		if ( err == MPG123_NEW_FORMAT ) {
-			mpg123_getformat(ds->mf,&rate,&channels,&enc);
-			
-			DSFYDEBUG("New format: %li Hz, %i channels, encoding value %i\n",rate,channels,enc);
-			pcm->channels = channels;
-			pcm->samplerate = rate;
-			
-		} else if ( err == MPG123_DONE ) {
-			
-			mpg123_close(ds->mf);
-			mpg123_delete(ds->mf);
-			ds->mf = NULL;
-			return 0;
-		}
-		
-		pcm->len = bytes;
-		if (ds->client_callback) {
-			off_t frame_cur;
-			off_t frame_left;
-			double seconds_cur;
-			double seconds_left;
-			mpg123_position(ds->mf,0,bytes,&frame_cur,&frame_left,&seconds_cur,&seconds_left);
-			
-			double point = (double) seconds_cur;
-			ds->client_callback(ds, DESPOTIFY_TIME_TELL, &point,
-					ds->client_callback_data);
-		}
-		
-		snd_fill_fifo(ds);
-		break;
-	}
-	
-	return 0;
-#else
-	return -1;
-#endif
-}
-
-int snd_stream_is_vorbis(struct despotify_session* ds) {
-    int res = 0;
-    const char ogg_magic[4] = "OggS";
-    pthread_mutex_lock(&ds->fifo->lock);
-
-    do {
-    	/* Need two buffer to access the real stream */
-    	while ( ds->fifo->start == NULL || ds->fifo->start->next == NULL ) {
-    	   _DSFYDEBUG ("Waiting for data (%d bytes)\n", ds->fifo->totbytes);
-    	   pthread_cond_wait (&ds->fifo->cs, &ds->fifo->lock);
-    	   _DSFYDEBUG ("Got data\n");
-    	}
-
-    	struct snd_buffer* b_start = ds->fifo->start;
-    	struct snd_buffer* b_head = ds->fifo->start->next;
-    	if (!b_start || !b_head) {
-    	    res = -2;
-    	    break;
-    	}
-
-    	_DSFYDEBUG("cmd:%d bytes:%d\n", b_start->cmd, ds->fifo->totbytes);
-
-    	if (b_start->cmd == SND_CMD_START) {
-    		/* First buffer in the stream. Detect OGG magic */
-    		if (memcmp(b_head->ptr,ogg_magic,sizeof(ogg_magic)) == 0 ) {
-    			res = 1;
-    		} else {
-    			res = 0;
-    		}
-    	} else {
-    		/* Errr.. Not called at start of stream */
-    		res = -1;
-    	}
-    } while ( 0 );
-    pthread_mutex_unlock(&ds->fifo->lock);
-    return res;
-}
-
-
-
-int snd_get_pcm(struct despotify_session* ds, struct pcm_data* pcm)
-{
-    if (!ds || !ds->fifo || !ds->fifo->start) {
-        pcm->len = 0;
-        shortsleep();
-        return 0;
-    }
-
-    /* top up fifo */
-    snd_fill_fifo(ds);
-
-    if (!ds->vf && !ds->mf) {
-    	int res = snd_stream_is_vorbis(ds);
-    	if ( res == 1 ) {
-    		/* Vorbis */
-    		return snd_do_vorbis(ds,pcm);
-    	} else if ( res == 0 ) {
-    		/* Probably mpeg */
-    		return snd_do_mpeg(ds,pcm);
-    	} else {
-    		/* Errr */
-    		return res;
-    	}
-    }
-    
-    if (ds->vf ) {
-    	return snd_do_vorbis(ds,pcm);
-    } else if ( ds->mf ) {
-    	return snd_do_mpeg(ds,pcm);
-    } else {
-    	/* err */
-    	return -3;
-    }
-}

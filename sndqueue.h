@@ -80,32 +80,7 @@ enum
     SND_CMD_CHANNEL_END
 };
 
-typedef int (*audio_request_callback) (void *);
-typedef void (*time_tell_callback) (struct despotify_session *, int cur_time);
-
-void snd_reset (struct despotify_session* ds);
-bool snd_init (struct despotify_session* ds);
-void snd_destroy (struct despotify_session *);
-void snd_set_data_callback (struct despotify_session *, audio_request_callback, void *);
-void snd_set_end_callback (struct despotify_session* ds,
-			   audio_request_callback callback, void *arg);
-void snd_set_timetell_callback (struct despotify_session* ds,
-                                time_tell_callback callback);
-
-int snd_stop (struct despotify_session* ds);
-int snd_next (struct despotify_session *ds);
-void snd_start (struct despotify_session* ds);
-void snd_ioctl (struct despotify_session *session, int cmd, void *data, int length);
-long pcm_read (struct despotify_session* ds, char *buffer, int length,
-               int bigendianp, int word, int sgned, int *bitstream);
-
-void snd_mark_dlding (struct despotify_session* ds);
-void snd_mark_idle (struct despotify_session* ds);
-void snd_mark_end (struct despotify_session* ds);
-
-size_t snd_ov_read_callback(void *ptr, size_t size, size_t nmemb, void* ds);
-long snd_pcm_read(struct despotify_session* ds,
-                  char *buffer, int length, int bigendianp,
-                  int word, int sgned, int *bitstream);
-int snd_get_pcm(struct despotify_session*, struct pcm_data*);
+void snd_fill_fifo(struct despotify_session* ds);
+int vorbis_consume(void* source, int bytes, void* private, int offset);
+int snd_consume_data(struct despotify_session* ds, int req_bytes, void* private, int (*consumer)(void* source, int bytes, void* private, int offset));
 #endif

@@ -8,8 +8,6 @@
 
 static bool play = false;
 
-void initfp(FILE* _fp);
-
 void print_track_info(const struct track* t)
 {
     if(t->has_meta_data)
@@ -112,7 +110,6 @@ int main(int argc, char** argv)
     printf("Authentication successful!\n");
 
     FILE* fp = fopen(argv[3],"wb");
-    initfp(fp);
     char* uri = argv[4]+14;
     char id[33];
     despotify_uri2id(uri,id);
@@ -127,14 +124,20 @@ int main(int argc, char** argv)
     printf("\nTrack Info:\n");
     print_track_info(t);
 
-    struct pcm_data data;
-    struct pcm_data* pcm = &data;
-
     despotify_play(ds, t, false);
     play = true;
+    char buf[4096];
     while (play)
     {
-        snd_get_pcm(ds, pcm);
+        snd_fill_fifo(ds);
+        size_t outsize = snd_consume_data(ds,sizeof(buf),buf,vorbis_consume);
+        if (outsize) {
+            //printf("buf: %s\n",buf);
+            fwrite(buf, outsize, 1, fp);
+        }
+        else {
+            break;
+        }
     }
 
     fclose(fp);
