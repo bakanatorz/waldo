@@ -22,7 +22,6 @@ void print_track_info(const struct track* t)
             printf("%s%s", a->name, a->next ? ", " : "");
         }
         printf("\nYear: %d\nLength: %02d:%02d\n\n", t->year, t->length / 60000, t->length % 60000 / 1000);
-        printf("fid: %s tid: %s\n", t->file_id, t->track_id);
     }
     else
     {
@@ -96,41 +95,17 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection* connec
             return "";
         }
 
-        char username[1024], password[1024], uri[1024];
+        char post_data[1024], username[1024], password[1024], uri[1024];
+        int post_data_len;
+        post_data_len = mg_read(connection, post_data, sizeof(post_data));
 
-        const char* c = request_info->uri+1;
-        char* d = username;
-        int var = 0;
-        while(*c)
-        {
-            if (*c == '/')
-            {
-                *d = '\0';
-                if (var == 0)
-                {
-                    d = password;
-                    var++;
-                }
-                else if (var == 1)
-                {
-                    d = uri;
-                    var++;
-                }
-                else
-                {
-                    break;
-                }
-            }
-            else
-            {
-                *(d++) = *c;
-            }
-            c++;
-        }
-        uri[22] = '\0';
+        mg_get_var(post_data, post_data_len, "username", username, sizeof(username));
+        mg_get_var(post_data, post_data_len, "password", password, sizeof(password));
+        mg_get_var(post_data, post_data_len, "uri", uri, sizeof(uri));
+
         printf("username: %s\npassword: %s\nuri: %s\n",username, password, uri);
 
-        if (despotify_authenticate(ds, username, password))
+        if (strlen(username) && strlen(password) && strlen(uri) && despotify_authenticate(ds, username, password))
         {
             printf("auth'd\n");
             char id[33];
