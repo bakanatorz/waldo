@@ -10,7 +10,12 @@
 #include "mongoose.h"
 #include "sndqueue.h"
 
-bool play;
+typedef struct 
+{
+    double start;
+    size_t curdata;
+    bool play;
+} callback_data_t;
 
 void print_track_info(const struct track* t)
 {
@@ -31,43 +36,40 @@ void print_track_info(const struct track* t)
 
 void despotify_callback(struct despotify_session* ds, int signal, void* data, void* callback_data)
 {
-    static int seconds = -1;
-    static double starts = 0;
-    (void)callback_data; /* don't warn about unused parameters */
-    
+    callback_data_t* cdata = callback_data;
     switch (signal) {
         case DESPOTIFY_NEW_TRACK: {
             struct track* t = data;
             printf("New track: %s / %s (%d:%02d) %d kbit/s\n", t->title, t->artist->name, t->length / 60000, t->length % 60000 / 1000, t->file_bitrate / 1000);
-            seconds = -1;
+            cdata->curdata = -1;
             break;
         }
     
         case DESPOTIFY_TIME_TELL:
-            if ((int)(*((double*)data)) != seconds) {
+            {
                 struct track* t = despotify_get_current_track(ds);
                 if (t)
                 {
-                    int prevseconds = seconds;
-                    seconds = *((double*)data);
-                    int trackseconds = t->length/1000;
-                    printf("Time: %d:%02d/%d:%02d (%f%%)", seconds / 60, seconds % 60, trackseconds / 60, trackseconds % 60, ((double)seconds)/trackseconds*100);
-                    if (prevseconds == -1)
+                    size_t prevdata = cdata->curdata;
+                    cdata->curdata += *((size_t*)data);
+                    size_t totdata = (t->file_bitrate/8)*(t->length/1000.0)/1024;
+                    printf("Data (KB): %d/%d (%f%%)", (unsigned int) cdata->curdata/1024, (unsigned int) totdata, ((double)cdata->curdata/1024)/totdata*100);
+                    if (prevdata == -1)
                     {
                         struct timeval tv;
                         gettimeofday(&tv, NULL);
-                        starts = tv.tv_sec+((double)tv.tv_usec)*1.0e-6;
+                        cdata->start = tv.tv_sec+((double)tv.tv_usec)*1.0e-6;
                     }
                     else
                     {
                         struct timeval curtv;
                         gettimeofday(&curtv, NULL);
                         double curs = curtv.tv_sec+((double)curtv.tv_usec)*1.0e-6;
-                        double diff = curs-starts;
-                        double rate = seconds/diff;
-                        double eta = (trackseconds-seconds)/rate;
+                        double diff = curs-cdata->start;
+                        double rate = cdata->curdata/1024/diff;
+                        double eta = ((int)totdata-cdata->curdata/1024)/rate;
                         int mins = ((int)eta)/60;
-                        printf(" ETA: %d:%05.2f", mins, eta-mins*60);
+                        printf(" Rate: %0.2f KB/s ETA: %d:%05.2f", rate, mins, eta-mins*60.0);
                     }
                     printf("\r");
                     fflush(stdout);
@@ -77,9 +79,9 @@ void despotify_callback(struct despotify_session* ds, int signal, void* data, vo
  
         case DESPOTIFY_END_OF_PLAYLIST:
             printf("\nDownload Complete\n");
-            play = false;
+            cdata->play = false;
             break;
-}
+    }
 }
 
 static void *mongoose_callback(enum mg_event event, struct mg_connection* connection)
@@ -88,7 +90,8 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection* connec
     if (event == MG_NEW_REQUEST)
     {
         printf("New Request: %s\n", request_info->uri);
-        struct despotify_session* ds = despotify_init_client(despotify_callback, NULL, true, true);
+        callback_data_t cdata = {0.0, -1, true};
+        struct despotify_session* ds = despotify_init_client(despotify_callback, &cdata, true, true);
         if (!ds)
         {
             printf("despotify_init_client() failed\n");
@@ -110,7 +113,6 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection* connec
             printf("auth'd\n");
             char id[33];
             despotify_uri2id(uri,id);
-            printf("%d\n",strlen(id));
             struct track* t = despotify_get_track(ds, id);
             printf("Serving track %s\n",id);
             if (!t)
@@ -128,10 +130,20 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection* connec
                 char filename[27];
                 strcpy(filename, uri);
                 strcpy(filename+22, ".ogg");
-                FILE* file;
+                FILE* file = fopen(filename, "rb");
+                size_t filesize = 0;
+                // This is not exact, but we should expect to have at least this
+                // much audio data, not counting the header blocks. Just a sanity check
+                // to make sure the download wasn't stopped early
+                size_t expectedsize = (t->file_bitrate/8)*(t->length/1000.0);
+                if (file)
+                {
+                    fseek(file, 0L, SEEK_END);
+                    filesize = ftell(file);
+                }
+
                 printf("starting up\n");
-                print_track_info(t);
-                if (file = fopen(filename, "rb"))
+                if (file && filesize > expectedsize)
                 {
                     fclose(file);
                     printf("found cache\n");
@@ -140,13 +152,14 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection* connec
                 {
                     despotify_play(ds, t, false);
                     file = fopen(filename, "wb");
-                    play = true;
+                    cdata.play = true;
                     char buf[4096];
-                    while (play)
+                    while (cdata.play)
                     {
                         snd_fill_fifo(ds);
                         size_t outsize = snd_consume_data(ds,sizeof(buf),buf,vorbis_consume);
                         if (outsize) {
+                            ds->client_callback(ds, DESPOTIFY_TIME_TELL, &outsize, ds->client_callback_data);
                             fwrite(buf, outsize, 1, file);
                         }
                         else {
@@ -166,7 +179,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection* connec
             printf("Authorization Failed :(\n\n");
             mg_printf(connection, "HTTP/1.0 200 OK\r\n"
             "Content-Type: text/plain\r\n\r\n"
-            "%s\r\n%s\r\nAuthorization Failed :(", username, password);
+            "%s\r\n%s\r%s\r\n\nAuthorization Failed :(", username, password, uri);
         }
 
         despotify_exit(ds);

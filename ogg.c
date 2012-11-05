@@ -6,7 +6,12 @@
 
 #include "sndqueue.h"
 
-static bool play = false;
+typedef struct 
+{
+    double start;
+    size_t curdata;
+    bool play;
+} callback_data_t;
 
 void print_track_info(const struct track* t)
 {
@@ -25,45 +30,42 @@ void print_track_info(const struct track* t)
     }
 }
 
-void callback(struct despotify_session* ds, int signal, void* data, void* callback_data)
+void despotify_callback(struct despotify_session* ds, int signal, void* data, void* callback_data)
 {
-    static int seconds = -1;
-    static double starts = 0;
-    (void)callback_data; /* don't warn about unused parameters */
-    
+    callback_data_t* cdata = callback_data;
     switch (signal) {
         case DESPOTIFY_NEW_TRACK: {
             struct track* t = data;
             printf("New track: %s / %s (%d:%02d) %d kbit/s\n", t->title, t->artist->name, t->length / 60000, t->length % 60000 / 1000, t->file_bitrate / 1000);
-            seconds = -1;
+            cdata->curdata = -1;
             break;
         }
     
         case DESPOTIFY_TIME_TELL:
-            if ((int)(*((double*)data)) != seconds) {
+            {
                 struct track* t = despotify_get_current_track(ds);
                 if (t)
                 {
-                    int prevseconds = seconds;
-                    seconds = *((double*)data);
-                    int trackseconds = t->length/1000;
-                    printf("Time: %d:%02d/%d:%02d (%f%%)", seconds / 60, seconds % 60, trackseconds / 60, trackseconds % 60, ((double)seconds)/trackseconds*100);
-                    if (prevseconds == -1)
+                    size_t prevdata = cdata->curdata;
+                    cdata->curdata += *((size_t*)data);
+                    size_t totdata = (t->file_bitrate/8)*(t->length/1000.0)/1024;
+                    printf("Data (KB): %d/%d (%f%%)", (unsigned int) cdata->curdata/1024, (unsigned int) totdata, ((double)cdata->curdata/1024)/totdata*100);
+                    if (prevdata == -1)
                     {
                         struct timeval tv;
                         gettimeofday(&tv, NULL);
-                        starts = tv.tv_sec+((double)tv.tv_usec)*1.0e-6;
+                        cdata->start = tv.tv_sec+((double)tv.tv_usec)*1.0e-6;
                     }
                     else
                     {
                         struct timeval curtv;
                         gettimeofday(&curtv, NULL);
                         double curs = curtv.tv_sec+((double)curtv.tv_usec)*1.0e-6;
-                        double diff = curs-starts;
-                        double rate = seconds/diff;
-                        double eta = (trackseconds-seconds)/rate;
+                        double diff = curs-cdata->start;
+                        double rate = cdata->curdata/1024/diff;
+                        double eta = ((int)totdata-cdata->curdata/1024)/rate;
                         int mins = ((int)eta)/60;
-                        printf(" ETA: %d:%05.2f", mins, eta-mins*60);
+                        printf(" Rate: %0.2f KB/s ETA: %d:%05.2f", rate, mins, eta-mins*60.0);
                     }
                     printf("\r");
                     fflush(stdout);
@@ -73,9 +75,9 @@ void callback(struct despotify_session* ds, int signal, void* data, void* callba
  
         case DESPOTIFY_END_OF_PLAYLIST:
             printf("\nDownload Complete\n");
-            play = false;
+            cdata->play = false;
             break;
-}
+    }
 }
 
 int main(int argc, char** argv)
@@ -93,7 +95,8 @@ int main(int argc, char** argv)
         printf("despotify_init() failed\n");
         return 1;
     }
-    struct despotify_session* ds = despotify_init_client(callback, NULL, true, true);
+    callback_data_t cdata = {0.0, -1, true};
+    struct despotify_session* ds = despotify_init_client(despotify_callback, &cdata, true, true);
     if (!ds)
     {
         printf("despotify_init_client() failed\n");
@@ -125,20 +128,20 @@ int main(int argc, char** argv)
     print_track_info(t);
 
     despotify_play(ds, t, false);
-    play = true;
+    cdata.play = true;
     char buf[4096];
-    while (play)
+    while (cdata.play)
     {
         snd_fill_fifo(ds);
         size_t outsize = snd_consume_data(ds,sizeof(buf),buf,vorbis_consume);
         if (outsize) {
+            ds->client_callback(ds, DESPOTIFY_TIME_TELL, &outsize, ds->client_callback_data);
             fwrite(buf, outsize, 1, fp);
         }
         else {
             break;
         }
     }
-
     fclose(fp);
     despotify_exit(ds);
     if (!despotify_cleanup())
