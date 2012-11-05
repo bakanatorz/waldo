@@ -1,6 +1,25 @@
 Playing with despotify, currently can download tracks.
 
-To Use:
-Install despotify (http://despotify.se/)
-Place your username and password in the provided credentials.txt template file. If you're using Facebook to log in, you'll need to set up a device-specific password (http://www.spotify.com/us/help/faq/devices/connect-devices/)
-Enjoy!
+Dependencies:
+despotify (http://despotify.se/)
+libao (http://www.xiph.org/ao/)
+libvorbisfile (http://www.xiph.org/vorbis/)
+
+Building (binaries will be placed in bin/)
+$ cmake .
+$ make
+
+Executables:
+    waldo_play
+        syntax: `waldo_play username password spotify:track:uri`
+        Plays the selected track on the default audio device
+    waldo_wave
+        syntax: `waldo_wave username password outputfile spotify:track:uri`
+        Saves the selected track into a WAVE file
+    waldo_ogg
+        syntax: `waldo_ogg username password outputfile spotify:track:uri`
+        Saves the selected track into an OGG Vorbis file
+    waldo_server
+        syntax: `waldo_server`
+        Accepts POST requests with the vars username, password, uri, responds with the OGG file
+        At the moment this downloads the file before responding, which can take up to a minute or so depending on file length
