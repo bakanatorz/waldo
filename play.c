@@ -3,7 +3,6 @@
 #include <despotify.h>
 #include <unistd.h>
 
-#include "auth.h"
 #include "audio.h"
 
 static bool play = false;
@@ -54,21 +53,11 @@ void callback(struct despotify_session* ds, int signal, void* data, void* callba
 int main(int argc, char** argv)
 {
     // Get the auth params from a file
-    if(argc < 3)
+    if(argc < 4)
     {
-        printf("Proper usage: test_play auth_filename spotify:track:track_uri\n");
+        printf("Proper usage: test_play username password spotify:track:track_uri\n");
         return 1;
     }
-
-    auth_t* auth = auth_file(argv[1]);
-
-    if (!auth)
-    {
-        printf("Couldn't find username and/or password\n");
-        return 1;
-    }
-    
-    //printf("username: %s\npassword: %s\n", auth->username, auth->password);
 
     // Set up despotify
     if (!despotify_init())
@@ -76,6 +65,7 @@ int main(int argc, char** argv)
         printf("despotify_init() failed\n");
         return 1;
     }
+
     struct despotify_session* ds = despotify_init_client(callback, NULL, true, true);
     if (!ds)
     {
@@ -83,7 +73,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    if (!despotify_authenticate(ds, auth->username, auth->password))
+    if (!despotify_authenticate(ds, argv[1], argv[2]))
     {
         printf("Authentication failed\n");
         despotify_exit(ds);
@@ -92,7 +82,7 @@ int main(int argc, char** argv)
 
     printf("Authentication successful!\n");
 
-    char* uri = argv[2]+14;
+    char* uri = argv[3]+14;
     char id[33];
     despotify_uri2id(uri,id);
     void* audio_device = audio_init();
@@ -132,6 +122,5 @@ int main(int argc, char** argv)
         printf("despotify_cleanup() failed\n");
         return 1;
     }
-    free_auth(auth);
     return 0;
 }

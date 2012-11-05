@@ -6,3 +6,5 @@ install_manifest.txt
 bin/
 *.sw*
 .DS_STORE
+*.wav
+*.ogg

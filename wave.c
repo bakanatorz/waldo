@@ -4,8 +4,6 @@
 #include <unistd.h>
 #include <sys/time.h>
 
-#include "auth.h"
-
 static bool play = false;
 
 typedef struct chunk_t
@@ -48,30 +46,32 @@ void callback(struct despotify_session* ds, int signal, void* data, void* callba
         case DESPOTIFY_TIME_TELL:
             if ((int)(*((double*)data)) != seconds) {
                 struct track* t = despotify_get_current_track(ds);
-                int prevseconds = seconds;
-                seconds = *((double*)data);
-                int trackseconds = t->length/1000;
-                printf("Time: %d:%02d/%d:%02d (%f%%)", seconds / 60, seconds % 60, trackseconds / 60, trackseconds % 60, ((double)seconds)/trackseconds*100);
-                if (prevseconds == -1)
+                if (t)
                 {
-                    struct timeval tv;
-                    gettimeofday(&tv, NULL);
-                    starts = tv.tv_sec+((double)tv.tv_usec)*1.0e-6;
+                    int prevseconds = seconds;
+                    seconds = *((double*)data);
+                    int trackseconds = t->length/1000;
+                    printf("Time: %d:%02d/%d:%02d (%f%%)", seconds / 60, seconds % 60, trackseconds / 60, trackseconds % 60, ((double)seconds)/trackseconds*100);
+                    if (prevseconds == -1)
+                    {
+                        struct timeval tv;
+                        gettimeofday(&tv, NULL);
+                        starts = tv.tv_sec+((double)tv.tv_usec)*1.0e-6;
+                    }
+                    else
+                    {
+                        struct timeval curtv;
+                        gettimeofday(&curtv, NULL);
+                        double curs = curtv.tv_sec+((double)curtv.tv_usec)*1.0e-6;
+                        double diff = curs-starts;
+                        double rate = seconds/diff;
+                        double eta = (trackseconds-seconds)/rate;
+                        int mins = ((int)eta)/60;
+                        printf(" ETA: %d:%05.2f", mins, eta-mins*60);
+                    }
+                    printf("\r");
+                    fflush(stdout);
                 }
-                else
-                {
-                    struct timeval curtv;
-                    gettimeofday(&curtv, NULL);
-                    double curs = curtv.tv_sec+((double)curtv.tv_usec)*1.0e-6;
-                    double diff = curs-starts;
-                    printf(" diff: %f", diff);
-                    double rate = seconds/diff;
-                    double eta = (trackseconds-seconds)/rate;
-                    int mins = ((int)eta)/60;
-                    printf(" ETA: %d:%05.2f", mins, eta-mins*60);
-                }
-                printf("\r");
-                fflush(stdout);
             }
             break;
  
@@ -85,20 +85,12 @@ void callback(struct despotify_session* ds, int signal, void* data, void* callba
 int main(int argc, char** argv)
 {
     // Get the auth params from a file
-    if(argc < 4)
+    if(argc < 5)
     {
-        printf("Proper usage: test_play auth_filename dest_filename spotify:track:track_uri\n");
+        printf("Proper usage: test_play username password dest_filename spotify:track:track_uri\n");
         return 1;
     }
 
-    auth_t* auth = auth_file(argv[1]);
-
-    if (!auth)
-    {
-        printf("Couldn't find username and/or password\n");
-        return 1;
-    }
-    
     // Set up despotify
     if (!despotify_init())
     {
@@ -112,7 +104,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    if (!despotify_authenticate(ds, auth->username, auth->password))
+    if (!despotify_authenticate(ds, argv[1], argv[2]))
     {
         printf("Authentication failed\n");
         despotify_exit(ds);
@@ -121,7 +113,7 @@ int main(int argc, char** argv)
 
     printf("Authentication successful!\n");
 
-    char* uri = argv[3]+14;
+    char* uri = argv[4]+14;
     char id[33];
     despotify_uri2id(uri,id);
     struct track* t = despotify_get_track(ds, id);
@@ -162,7 +154,7 @@ int main(int argc, char** argv)
         chunk = chunk->next;
     }
 
-    FILE* fp = fopen(argv[2],"wb");
+    FILE* fp = fopen(argv[3],"wb");
     const int16_t NumChannels = 2;
     const int16_t BitsPerSample = 16;
     const int32_t Subchunk2Size = len * NumChannels * BitsPerSample/8;
@@ -202,6 +194,5 @@ int main(int argc, char** argv)
         printf("despotify_cleanup() failed\n");
         return 1;
     }
-    free_auth(auth);
     return 0;
 }

@@ -10,14 +10,11 @@ INCLUDE_DIRECTORIES(src)
 
 ADD_DEFINITIONS(-g -Wall -std=c99)
 
-ADD_EXECUTABLE(test_auth test_auth.c auth.c)
-TARGET_LINK_LIBRARIES(test_auth despotify)
+ADD_EXECUTABLE(waldo_wave wave.c)
+TARGET_LINK_LIBRARIES(waldo_wave despotify)
 
-ADD_EXECUTABLE(test_dump test_dump.c auth.c)
-TARGET_LINK_LIBRARIES(test_dump despotify)
+ADD_EXECUTABLE(waldo_ogg ogg.c sndqueue.c)
+TARGET_LINK_LIBRARIES(waldo_ogg despotify vorbisfile)
 
-ADD_EXECUTABLE(test_stream test_stream.c auth.c sndqueue.c)
-TARGET_LINK_LIBRARIES(test_stream despotify vorbisfile)
-
-ADD_EXECUTABLE(test_play test_play.c auth.c libao.c)
-TARGET_LINK_LIBRARIES(test_play despotify ao)
+ADD_EXECUTABLE(waldo_play play.c libao.c)
+TARGET_LINK_LIBRARIES(waldo_play despotify ao)
