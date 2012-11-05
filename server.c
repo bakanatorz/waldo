@@ -195,7 +195,12 @@ int main(int argc, char** argv)
 {
     // Set up Mongoose options
     struct mg_context* context;
-    const char* options[] = {"listening_ports", "8080", NULL};
+    const char* port = "8080";
+    if (argc > 1)
+    {
+        port = argv[1];
+    }
+    const char* options[] = {"listening_ports", port, NULL};
     char** c = options;
     printf("Options:\n");
     while (*c)
