@@ -20,6 +20,23 @@ Executables:
         syntax: `waldo_ogg username password outputfile spotify:track:uri`
         Saves the selected track into an OGG Vorbis file
     waldo_server
-        syntax: `waldo_server [portnum]`
-        Basic POST server, defaults to port 8080, accepts requests with the vars username, password, uri, responds with the OGG file
-        At the moment this downloads the file before responding, which can take up to a minute or so depending on file length
+        syntax: `waldo_server [portnum] username password`
+        Basic API:
+        Syntax: server/request/[trackid]
+        Where request is one of the following verbs:
+            monitor
+                Doesn't take a trackid, returns a JSON array of currently-downloading track ID's to completion fraction
+            init
+                Takes a trackid, returns a JSON object with a response variable of value:
+                "invalid" - an invalid trackid was supplied
+                "complete" - the track is currently downloaded and ready to server
+                "progressing" - the track is currently being downloaded
+                "starting" - the download of the track has begun
+            check
+                Takes a trackid, returns a JSON object with a response variable of value:
+                "invalid" - an invalid trackid was supplied
+                "complete" - the track is currently downloaded and ready to server
+                "progressing" - the track is currently being downloaded
+                Decimal value representing the approximate fraction completed (can be greater than 1 due to inaccurate estimations)
+            get
+                Takes a trackid, returns the file if it is ready for download, otherwise 404
