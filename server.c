@@ -261,6 +261,12 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection* connec
             return NULL;
         }
 
+        // Get the filename
+        char filename[27];
+        printf("%s\n",uri);
+        strcpy(filename, uri);
+        strcpy(filename+22, ".ogg");
+
         // Save the request type as an enum
         bool forceinit = false;
         reqtype request;
@@ -291,6 +297,49 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection* connec
             return NULL;
         }
 
+        // If it's a check or init, see if the track is in the queue or
+        // the file exists before authenticating
+        if (request == INIT || request == CHECK)
+        {
+            // Check if the track is in the list
+            pthread_mutex_lock(&global_lock);
+            track_status_t* track = global_tracks;
+            while(track)
+            {
+                if (!strcmp(track->id, uri))
+                {
+                    if (request == CHECK)
+                    {
+                        pthread_mutex_unlock(&global_lock);
+                        double val;
+                        pthread_mutex_lock(&track->lock);
+                        val = track->completion;
+                        pthread_mutex_unlock(&track->lock);
+                        char vals[5];
+                        sprintf(vals,"%.2f", val);
+                        respond(NULL, connection, vals);
+                        printf("Track %s Completion: %.2f%%\n", id, val*100);
+                        return "";
+                    }
+                    else // request == INIT
+                    {
+                        respond(NULL, connection, "progressing");
+                        return "";
+                    }
+                }
+                track = track->next;
+            }
+            pthread_mutex_unlock(&global_lock);
+
+            // Check if the file exists
+            if (fileExists(filename))
+            {
+                respond(NULL, connection, "complete");
+                printf("Track %s complete\n", id);
+                return "";
+            }
+        }
+
         // Create the spotify session
         struct despotify_session* ds = despotify_init_client(despotify_callback, NULL, true, true);
         if (!ds)
@@ -308,6 +357,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection* connec
         // Check if the ID is valid
         // If we're handling a GET req, return 404
         // else give a JSON response of "invalid"
+        // if valid track not found
         char id[33];
         despotify_uri2id(uri,id);
         struct track* t = despotify_get_track(ds, id);
@@ -330,12 +380,6 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection* connec
         print_track_info(t);
         printf("\n");
 
-        // Get the filename
-        char filename[27];
-        printf("%s\n",uri);
-        strcpy(filename, uri);
-        strcpy(filename+22, ".ogg");
-
         switch (request)
         {
             // GET - return the file
@@ -344,48 +388,13 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection* connec
                 mg_send_file(connection, filename);
                 printf("Sent %s\n", filename);
                 return "";
-            // CHECK - return "complete", "unstarted", or the current progress
+            // CHECK - track must be unstarted
             case CHECK:
-                {
-                    pthread_mutex_lock(&global_lock);
-                    track_status_t* track = global_tracks;
-                    while(track)
-                    {
-                        printf("id: %s id: %s\n", track->id, uri);
-                        if (!strcmp(track->id, uri))
-                        {
-                            pthread_mutex_unlock(&global_lock);
-                            double val;
-                            pthread_mutex_lock(&track->lock);
-                            val = track->completion;
-                            pthread_mutex_unlock(&track->lock);
-                            char vals[5];
-                            sprintf(vals,"%.2f", val);
-                            respond(ds, connection, vals);
-                            printf("Track %s Completion: %.2f%%\n", id, val*100);
-                            return "";
-                        }
-                        track = track->next;
-                    }
-                    pthread_mutex_unlock(&global_lock);
-                }
-                if (fileExists(filename))
-                {
-                    respond(ds, connection, "complete");
-                    printf("Track %s complete\n", id);
-                    return "";
-                }
                 respond(ds, connection, "unstarted");
                 printf("Track %s unstarted\n", id);
                 return "";
-            // INIT - return "complete", "starting", or "progressing"
+            // INIT - track should start
             case INIT:
-                if (inList(uri))
-                {
-                    respond(ds, connection, "progressing");
-                    printf("Track %s progressing\n", id);
-                    return "";
-                }
                 if (!forceinit && (fileExists(filename) && fileSize(filename) > expectedSize(t)))
                 {
                     respond(ds, connection, "complete");
