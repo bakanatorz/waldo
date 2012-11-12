@@ -7,7 +7,7 @@
 
 #include <despotify.h>
 
-#include "mongoose.h"
+#include "mongoose/mongoose.h"
 #include "sndqueue.h"
 
 typedef struct track_status_t
