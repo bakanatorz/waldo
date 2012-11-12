@@ -32,6 +32,8 @@ Executables:
                 "complete" - the track is currently downloaded and ready to server
                 "progressing" - the track is currently being downloaded
                 "starting" - the download of the track has begun
+            forceinit
+                The same as init, but forces a redownload of the file instead of serving from cache
             check
                 Takes a trackid, returns a JSON object with a response variable of value:
                 "invalid" - an invalid trackid was supplied

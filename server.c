@@ -10,13 +10,6 @@
 #include "mongoose.h"
 #include "sndqueue.h"
 
-typedef struct 
-{
-    double start;
-    size_t curdata;
-    bool play;
-} callback_data_t;
-
 typedef struct track_status_t
 {
     const char* id;
@@ -115,7 +108,8 @@ bool fileExists(const char* filename)
 void respond(struct despotify_session* ds, struct mg_connection* connection, const char* value)
 {
     mg_printf(connection, "HTTP/1.0 200 OK\r\n"
-    "Content-Type: application/json\r\n\r\n"
+    "Content-Type: application/json\r\n"
+    "Access-Control-Allow-Origin: *\r\n\r\n"
     "{\"response\":\"%s\"}", value);
     if (ds)
     {
@@ -177,44 +171,33 @@ void* download_thread(void* param)
             break;
         }
     }
-    printf("closing file?\n");
     fclose(file);
 
     // Cleanup
-    printf("cleaning up\n");
     pthread_mutex_lock(&global_lock);
-    printf("got lock\n");
     if (global_tracks == track)
     {
-        printf("found global tracks\n");
         global_tracks = track->next;
     }
     else
     {
-        printf("elsing\n");
         track_status_t* curtrack = global_tracks;
         while (curtrack->next != track)
         {
-            printf("next track\n");
             curtrack = curtrack->next;
         }
-        printf("assigning\n");
         curtrack->next = track->next;
     }
     pthread_mutex_unlock(&global_lock);
-    printf("released lock\n");
 
-    printf("exiting\n");
+    printf("Tarck %s complete\n", data->uri);
     despotify_exit(data->ds);
-    printf("freeing uri\n");
     free((char*)data->uri);
-    printf("freeing filename\n");
     free((char*)data->filename);
     
-    printf("freeing track\n");
     free(track);
-    printf("freeing data\n");
     free(data);
+    free(play);
     return 0;
 }
 
@@ -224,15 +207,16 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection* connec
     const struct mg_request_info* request_info = mg_get_request_info(connection);
     if (event == MG_NEW_REQUEST)
     {
-        printf("monitor request\n");
         printf("New Request: %s\n", request_info->uri);
 
         // Parse the uri and get the request type and track ID
         char* req = strdup(request_info->uri+1);
         if (!strcmp(req, "monitor"))
         {
+            printf("monitor request\n");
             mg_printf(connection, "HTTP/1.0 200 OK\r\n"
-            "Content-Type: application/json\r\n\r\n"
+            "Content-Type: application/json\r\n"
+            "Access-Control-Allow-Origin: *\r\n\r\n"
             "{");
             bool first=true;
             pthread_mutex_lock(&global_lock);
@@ -269,7 +253,14 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection* connec
         }
 
         // Save the request type as an enum
+        bool forceinit = false;
         reqtype request;
+        if (!strcmp(req, "forceinit"))
+        {
+            printf("force init request\n");
+            forceinit = true;
+            request = INIT;
+        }
         if (!strcmp(req, "init"))
         {
             printf("init request\n");
@@ -340,6 +331,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection* connec
         {
             // GET - return the file
             case GET:
+                mg_printf(connection, "Access-Control-Allow-Origin: *\r\n");
                 mg_send_file(connection, filename);
                 printf("Sent %s\n", filename);
                 return "";
@@ -385,7 +377,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection* connec
                     printf("Track %s progressing\n", id);
                     return "";
                 }
-                if (fileExists(filename) && fileSize(filename) > expectedSize(t))
+                if (!forceinit && (fileExists(filename) && fileSize(filename) > expectedSize(t)))
                 {
                     respond(ds, connection, "complete");
                     printf("Track %s complete\n", id);
