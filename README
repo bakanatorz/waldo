@@ -5,6 +5,9 @@ despotify (http://despotify.se/)
 libao (http://www.xiph.org/ao/)
 libvorbisfile (http://www.xiph.org/vorbis/)
 
+Bootstrapping the repo:
+$ ./bootstrap.sh
+
 Building (binaries will be placed in bin/)
 $ cmake .
 $ make
@@ -22,8 +25,9 @@ Executables:
     waldo_server
         syntax: `waldo_server [portnum] username password`
         Basic API:
-        Syntax: server/request/[trackid]
-        Where request is one of the following verbs:
+        Syntax: server/request/[trackid]/[filename]
+        The filename is an optional argument to allow the client to specify the name of the download file
+        Request should be one of the following verbs:
             monitor
                 Doesn't take a trackid, returns a JSON array of currently-downloading track ID's to completion fraction
             init

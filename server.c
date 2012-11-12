@@ -211,6 +211,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection* connec
 
         // Parse the uri and get the request type and track ID
         char* req = strdup(request_info->uri+1);
+        printf("req: %s\n", req);
         if (!strcmp(req, "monitor"))
         {
             printf("monitor request\n");
@@ -244,8 +245,16 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection* connec
         }
 
         char* uri = strchr(req, '/');
-        *uri = '\0';
-        uri+=1;
+        if (uri)
+        {
+            *uri = '\0';
+            uri+=1;
+        }
+        char* end = strchr(uri, '/');
+        if (end)
+        {
+            *end = '\0';
+        }
         if (!req || !uri || strlen(uri) != 22)
         {
             printf("No valid request found\n");

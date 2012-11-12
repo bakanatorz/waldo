@@ -19,5 +19,5 @@ TARGET_LINK_LIBRARIES(waldo_wave despotify)
 ADD_EXECUTABLE(waldo_ogg ogg.c sndqueue.c)
 TARGET_LINK_LIBRARIES(waldo_ogg despotify vorbisfile)
 
-ADD_EXECUTABLE(waldo_server server.c mongoose.c sndqueue.c)
+ADD_EXECUTABLE(waldo_server server.c mongoose/mongoose.c sndqueue.c)
 TARGET_LINK_LIBRARIES(waldo_server despotify vorbisfile)
