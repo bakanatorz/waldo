@@ -85,7 +85,7 @@ int main(int argc, char** argv)
     // Get the auth params from a file
     if(argc < 5)
     {
-        printf("Proper usage: test_play auth_filename dest_filename spotify:track:track_uri\n");
+        printf("Proper usage: waldo_ogg username password dest_filename spotify:track:track_uri\n");
         return 1;
     }
 

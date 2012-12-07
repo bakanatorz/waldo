@@ -29,13 +29,14 @@ Executables:
         The filename is an optional argument to allow the client to specify the name of the download file
         Request should be one of the following verbs:
             monitor
-                Doesn't take a trackid, returns a JSON array of currently-downloading track ID's to completion fraction
+                Doesn't take a trackid, returns a JSON array of currently-downloading track ID's to track info and completion fraction
             init
                 Takes a trackid, returns a JSON object with a response variable of value:
                 "invalid" - an invalid trackid was supplied
                 "complete" - the track is currently downloaded and ready to server
                 "progressing" - the track is currently being downloaded
                 "starting" - the download of the track has begun
+                Also provides track info (title, artist, album, length, year) for a valid trackid
             forceinit
                 The same as init, but forces a redownload of the file instead of serving from cache
             check
@@ -44,5 +45,6 @@ Executables:
                 "complete" - the track is currently downloaded and ready to server
                 "progressing" - the track is currently being downloaded
                 Decimal value representing the approximate fraction completed (can be greater than 1 due to inaccurate estimations)
+                Also provides track info (title, artist, album, length, year) for a valid trackid
             get
                 Takes a trackid, returns the file if it is ready for download, otherwise 404

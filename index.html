@@ -1,0 +1,108 @@
+<html>
+    <head>
+        <link rel="stylesheet" href="http://code.jquery.com/ui/1.9.1/themes/base/jquery-ui.css" />
+        <script src="http://code.jquery.com/jquery-1.8.2.js"></script>
+        <script src="http://code.jquery.com/ui/1.9.1/jquery-ui.js"></script>
+        <script>
+            var server = "http://localhost:8080";
+            function replaceMessage(elem, msg)
+            {
+                elem.attr("class","message");
+                elem.removeAttr("id");
+                elem.text(msg);
+            }
+            function updater()
+            {
+                $(".progbar").each(function()
+                {
+                    var id=$(this).attr("id");
+                    var progbar=$(this);
+                    $.getJSON(server+"/check/"+id, function(data) {
+                        if (data.response == "complete")
+                        {
+                            progbar.empty();
+                            progbar.attr("class","download");
+                            progbar.append("<a href='#'>" + data.info.artists + " - " + data.info.title);
+                        }
+                        else if (data.response == "invalid")
+                        {
+                            replaceMessage(progbar, "Track "+id+" Invalid");
+                        }
+                        else if (data.response == "unstarted")
+                        {
+                            replaceMessage(progbar, "Track "+id+" Unstarted");
+                        }
+                        else
+                        {
+                            var completion = parseFloat(data.response);
+                            if (!isNaN(completion))
+                            {
+                                progbar.progressbar("option", "value", completion*100);
+                            }
+                            else
+                            {
+                                replaceMessage(progbar, "Invalid Response: "+data.response);
+                            }
+                        }
+                    });
+                });
+            }
+            function launch(id, force)
+            {
+                if (id.slice(0, 14) == "spotify:track:")
+                {
+                    id = id.slice(14);
+                }
+                console.log("launching");
+                var verb = "init";
+                if (force)
+                {
+                    verb = "forceinit";
+                }
+                $.getJSON(server+"/"+verb+"/"+id, function(data) {
+                    console.log(data.response);
+                    $("#"+id).remove();
+                    if (data.response == "complete")
+                    {
+                        $("#downloads").append("<li class=\"download\" id=\""+id+"\"><a href='#'>" + data.info.artists + " - " + data.info.title + "</a></li>");
+                    }
+                    else if (data.response == "invalid")
+                    {
+                        $("#downloads").append("<li class=\"message\">Track "+id+" Invalid</li>");
+                    }
+                    else if (data.response == "progressing" && $("#"+id).length > 0)
+                    {
+                        $("#downloads").append("<li class=\"message\">Track "+id+" already downloading</li>");
+                    }
+                    else if (data.response == "starting" || data.response == "progressing")
+                    {
+                        $("#downloads").append("<li class=\"progbar\" id=\""+id+"\">"+data.info.artists+" - "+data.info.title+"</li>");
+                        $("#"+id).progressbar({value: 0});
+                    }
+                });
+            }
+            function download(id)
+            {
+                alert("yay downloading");
+            }
+            $(document).ready(function() {
+                $(".download a").live("click", function() {
+                    window.location.assign(server+"/get/"+$(this).parent().attr("id")+"/"+$(this).text()+".ogg");
+                });
+                $("#initbutton").click(function() {
+                    launch($("#testinput").val(), false);
+                });
+                $("#forceinitbutton").click(function() {
+                    launch($("#testinput").val(), true);
+                });
+                setInterval(updater, 1000);
+            });
+        </script>
+    </head>
+    <body>
+        <input type="text" id="testinput">
+        <input type="button" id="initbutton" value="init">
+        <input type="button" id="forceinitbutton" value="forceinit">
+        <ul id="downloads"></ul>
+    </body>
+</html>

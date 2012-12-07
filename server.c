@@ -12,15 +12,14 @@
 
 typedef struct track_status_t
 {
-    const char* id;
     double completion;
+    struct track* t;
     pthread_mutex_t lock;
     struct track_status_t* next;
 } track_status_t;
 
 typedef struct
 {
-    const char* uri;
     const char* filename;
     struct despotify_session* ds;
     struct track* t;
@@ -54,7 +53,7 @@ size_t fileSize(const char* filename)
     return size;
 }
 
-size_t expectedSize(struct track* t)
+size_t expectedSize(const struct track* t)
 {
     return (t->file_bitrate/8)*(t->length/1000.0)/1024;
 }
@@ -76,25 +75,22 @@ void print_track_info(const struct track* t)
     }
 }
 
-bool inList(const char* id)
+void json_track_info(struct mg_connection* connection, const struct track* t)
 {
-    if (!id)
+    if(t && t->has_meta_data)
     {
-        return false;
-    }
-    pthread_mutex_lock(&global_lock);
-    track_status_t* track = global_tracks;
-    while(track)
-    {
-        if (!strcmp(track->id, id))
+        mg_printf(connection, "{\"title\" : \"%s\", \"album\" : \"%s\", \"year\": %d, \"length\": %d, \"artists\": \"",
+                t->title, t->album, t->year, t->length);
+        for (struct artist* a = t->artist; a; a = a->next)
         {
-            pthread_mutex_unlock(&global_lock);
-            return true;
+            mg_printf(connection, "%s%s", a->name, a->next ? ", " : "");
         }
-        track = track->next;
+        mg_printf(connection, "\"}");
     }
-    pthread_mutex_unlock(&global_lock);
-    return false;
+    else
+    {
+        printf("Track has no metadata\n");
+    }
 }
 
 bool fileExists(const char* filename)
@@ -105,12 +101,18 @@ bool fileExists(const char* filename)
     return val;
 }
 
-void respond(struct despotify_session* ds, struct mg_connection* connection, const char* value)
+void respond(struct despotify_session* ds, struct mg_connection* connection, const char* value, const struct track* t)
 {
     mg_printf(connection, "HTTP/1.0 200 OK\r\n"
     "Content-Type: application/json\r\n"
     "Access-Control-Allow-Origin: *\r\n\r\n"
-    "{\"response\":\"%s\"}", value);
+    "{\"response\":\"%s\"", value);
+    if (t)
+    {
+        mg_printf(connection, ", \"info\" : ");
+        json_track_info(connection, t);
+    }
+    mg_printf(connection, "}");
     if (ds)
     {
         despotify_exit(ds);
@@ -123,8 +125,8 @@ void* download_thread(void* param)
 
     // Create track status
     track_status_t* track = malloc(sizeof(track_status_t));
-    track->id = data->uri;
     track->completion = 0.0;
+    track->t = data->t;
     track->next = NULL;
     pthread_mutex_init(&track->lock, NULL);
 
@@ -146,7 +148,7 @@ void* download_thread(void* param)
     pthread_mutex_unlock(&global_lock);
 
     // Check file size
-    despotify_play(data->ds, data->t, false);
+    despotify_play(data->ds, (struct track*)data->t, false);
     FILE* file = fopen(data->filename, "wb");
     char buf[4096];
     size_t totdata = expectedSize(data->t);
@@ -154,7 +156,7 @@ void* download_thread(void* param)
     bool* play = malloc(sizeof(bool));
     *play = true;
     data->ds->client_callback_data = play;
-    while (play)
+    while (track->t && play)
     {
         snd_fill_fifo(data->ds);
         size_t outsize = snd_consume_data(data->ds,sizeof(buf),buf,vorbis_consume);
@@ -172,6 +174,10 @@ void* download_thread(void* param)
         }
     }
     fclose(file);
+    if (!track->t)
+    {
+        remove(data->filename);
+    }
 
     // Cleanup
     pthread_mutex_lock(&global_lock);
@@ -190,9 +196,8 @@ void* download_thread(void* param)
     }
     pthread_mutex_unlock(&global_lock);
 
-    printf("Tarck %s complete\n", data->uri);
+    printf("Tarck %s complete\n", track->t->track_id);
     despotify_exit(data->ds);
-    free((char*)data->uri);
     free((char*)data->filename);
     
     free(track);
@@ -210,6 +215,10 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection* connec
         printf("New Request: %s\n", request_info->uri);
 
         // Parse the uri and get the request type and track ID
+        if (!(request_info->uri+1))
+        {
+            return NULL;
+        }
         char* req = strdup(request_info->uri+1);
         printf("req: %s\n", req);
         if (!strcmp(req, "monitor"))
@@ -224,10 +233,10 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection* connec
             track_status_t* track = global_tracks;
             while (track)
             {
-                const char* id;
+                const unsigned char* id;
                 double completion;
                 pthread_mutex_lock(&track->lock);
-                id = track->id;
+                id = track->t->track_id;
                 completion = track->completion;
                 pthread_mutex_unlock(&track->lock);
                 if (!first)
@@ -261,11 +270,18 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection* connec
             return NULL;
         }
 
+        // Check if the ID is valid
+        // If we're handling a GET req, return 404
+        // else give a JSON response of "invalid"
+        // if valid track not found
+        char id[33];
+        despotify_uri2id(uri,id);
+
         // Get the filename
-        char filename[27];
-        printf("%s\n",uri);
-        strcpy(filename, uri);
-        strcpy(filename+22, ".ogg");
+        char filename[37];
+        strcpy(filename, id);
+        strcpy(filename+32, ".ogg");
+        printf("id: %s\n",id);
 
         // Save the request type as an enum
         bool forceinit = false;
@@ -276,7 +292,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection* connec
             forceinit = true;
             request = INIT;
         }
-        if (!strcmp(req, "init"))
+        else if (!strcmp(req, "init"))
         {
             printf("init request\n");
             request = INIT;
@@ -304,12 +320,15 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection* connec
             // Check if the track is in the list
             pthread_mutex_lock(&global_lock);
             track_status_t* track = global_tracks;
+            track_status_t* prevtrack = NULL;
             while(track)
             {
-                if (!strcmp(track->id, uri))
+                if (!strcmp((char*)track->t->track_id, id))
                 {
                     if (request == CHECK)
                     {
+                        // It's safe to respond() without
+                        // holding the mutex because it's const
                         pthread_mutex_unlock(&global_lock);
                         double val;
                         pthread_mutex_lock(&track->lock);
@@ -317,27 +336,29 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection* connec
                         pthread_mutex_unlock(&track->lock);
                         char vals[5];
                         sprintf(vals,"%.2f", val);
-                        respond(NULL, connection, vals);
+                        respond(NULL, connection, vals, track->t);
                         printf("Track %s Completion: %.2f%%\n", id, val*100);
                         return "";
                     }
+                    else if (forceinit)
+                    {
+                        prevtrack->next = track->next;
+                        track->t = NULL;
+                        pthread_mutex_unlock(&global_lock);
+                        printf("Removed current download\n");
+                        break;
+                    }
                     else // request == INIT
                     {
-                        respond(NULL, connection, "progressing");
+                        respond(NULL, connection, "progressing", track->t);
                         return "";
                     }
                 }
+                prevtrack = track;
                 track = track->next;
             }
             pthread_mutex_unlock(&global_lock);
 
-            // Check if the file exists
-            if (fileExists(filename))
-            {
-                respond(NULL, connection, "complete");
-                printf("Track %s complete\n", id);
-                return "";
-            }
         }
 
         // Create the spotify session
@@ -354,12 +375,6 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection* connec
             return NULL;
         }
 
-        // Check if the ID is valid
-        // If we're handling a GET req, return 404
-        // else give a JSON response of "invalid"
-        // if valid track not found
-        char id[33];
-        despotify_uri2id(uri,id);
         struct track* t = despotify_get_track(ds, id);
         if (!t)
         {
@@ -369,8 +384,16 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection* connec
                 printf("Invalid Track %s\n", id);
                 return NULL;
             }
-            respond(ds, connection, "invalid");
+            respond(ds, connection, "invalid", NULL);
             printf("Invalid Track %s\n", id);
+            return "";
+        }
+        
+        // Check if the file exists
+        if (((request == INIT && !forceinit) || request == CHECK) && fileExists(filename))
+        {
+            respond(NULL, connection, "complete", t);
+            printf("Track %s complete\n", id);
             return "";
         }
 
@@ -390,27 +413,26 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection* connec
                 return "";
             // CHECK - track must be unstarted
             case CHECK:
-                respond(ds, connection, "unstarted");
+                respond(ds, connection, "unstarted", t);
                 printf("Track %s unstarted\n", id);
                 return "";
             // INIT - track should start
             case INIT:
                 if (!forceinit && (fileExists(filename) && fileSize(filename) > expectedSize(t)))
                 {
-                    respond(ds, connection, "complete");
+                    respond(ds, connection, "complete", t);
                     printf("Track %s complete\n", id);
                     return "";
                 }
                 // TODO (ebakan): launch download thread
                 pthread_t thread;
                 downloader_data_t* data = malloc(sizeof(downloader_data_t));
-                data->uri = strdup(uri);
                 data->filename = strdup(filename);
                 data->ds = ds;
                 data->t = t;
                 pthread_create(&thread, NULL, &download_thread, data);
                 pthread_detach(thread);
-                respond(NULL, connection, "starting");
+                respond(NULL, connection, "starting", t);
                 printf("Track %s download starting\n", id);
                 return "";
             default:
@@ -451,6 +473,7 @@ int main(int argc, char** argv)
     }
 
     // Init spotify
+    printf("Initting despotify\n");
     if (!despotify_init())
     {
         printf("despotify_init() failed\n");
@@ -460,7 +483,9 @@ int main(int argc, char** argv)
     pthread_mutex_init(&global_lock, NULL);
 
     // Run Mongoose
+    printf("starting mongoose\n");
     context = mg_start(&mongoose_callback, NULL, options);
+    printf("mongoose up and running\n");
     //getchar();
     for(;;)
         sleep(1);
