@@ -22,7 +22,7 @@
                         {
                             progbar.empty();
                             progbar.attr("class","download");
-                            progbar.append("<a href='#'>" + data.info.artists + " - " + data.info.title);
+                            progbar.append("<a class='dl' href='#'>" + data.info.artists + " - " + data.info.title + "</a>&nbsp;<a class='retry' href='#'>Retry</a>");
                         }
                         else if (data.response == "invalid")
                         {
@@ -81,13 +81,12 @@
                     }
                 });
             }
-            function download(id)
-            {
-                alert("yay downloading");
-            }
             $(document).ready(function() {
-                $(".download a").live("click", function() {
+                $(".download a.dl").live("click", function() {
                     window.location.assign(server+"/get/"+$(this).parent().attr("id")+"/"+$(this).text()+".ogg");
+                });
+                $(".download a.retry").live("click", function() {
+                    launch($(this).parent().attr("id"), true);
                 });
                 $("#initbutton").click(function() {
                     launch($("#testinput").val(), false);

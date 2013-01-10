@@ -122,6 +122,7 @@ void respond(struct despotify_session* ds, struct mg_connection* connection, con
 void* download_thread(void* param)
 {
     downloader_data_t* data = param;
+    printf("Download thread starting for %s\n", data->t->track_id);
 
     // Create track status
     track_status_t* track = malloc(sizeof(track_status_t));
@@ -146,9 +147,11 @@ void* download_thread(void* param)
         curtrack->next = track;
     }
     pthread_mutex_unlock(&global_lock);
+    printf("Added %s to global queue\n", track->t->track_id);
 
     // Check file size
     despotify_play(data->ds, (struct track*)data->t, false);
+    printf("Loaded despotify for %s\n", track->t->track_id);
     FILE* file = fopen(data->filename, "wb");
     char buf[4096];
     size_t totdata = expectedSize(data->t);
@@ -180,6 +183,7 @@ void* download_thread(void* param)
     }
 
     // Cleanup
+    printf("cleaning up\n");
     pthread_mutex_lock(&global_lock);
     if (global_tracks == track)
     {
